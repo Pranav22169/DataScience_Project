@@ -1,0 +1,193 @@
+# Load required libraries
+print("Loading libraries...")
+library(topicmodels)
+library(lda)
+library(slam)
+install.packages("stm")  # Ensure the stm package is installed
+library(stm)  # Ensure the stm package is loaded
+library(ggplot2)
+library(dplyr)
+library(tidytext)
+library(furrr)
+library(tm)
+library(tidyverse)
+library(wordcloud)
+library(Rtsne)
+library(rsvd)
+library(geometry)
+library(NLP)
+library(ldatuning)
+library(readxl)  # Load readxl for reading Excel files
+
+# Part-1 
+rm(list=ls())
+
+# Load the new dataset
+print("Loading dataset...")
+New_data <- read_excel("C:/Users/prabi/OneDrive/Desktop/scraped/Special.xlsx")
+
+# Check for NAs
+print("Checking for NAs...")
+na_counts <- sapply(New_data, function(x) sum(is.na(x)))
+print(na_counts)
+
+# Overview of the original dataset
+print("Overview of dataset...")
+str(New_data)
+
+# Sample data and remove unnecessary columns
+set.seed(830)
+num_rows <- min(100, nrow(New_data))  # Change to 100 for a smaller dataset
+print("Sampling data...")
+New_sample <- New_data[sample(nrow(New_data), num_rows), -c(1, 2, 3)]  # Remove Timestamp, Name, Email
+
+# Format and transform columns
+print("Formatting and transforming columns...")
+New_sample$`Do you commute via travel apps like Ola, Uber and Rapido?` <- as.factor(New_sample$`Do you commute via travel apps like Ola, Uber and Rapido?`)
+New_sample$`If you ever did commute, did you like the experience?` <- as.factor(New_sample$`If you ever did commute, did you like the experience?`)
+New_sample$`Would you recommend any of the above listed apps to others?` <- as.factor(New_sample$`Would you recommend any of the above listed apps to others?`)
+New_sample$`Please explain why you would recommend it?` <- as.character(New_sample$`Please explain why you would recommend it?`)
+
+# Check data types after transformation
+print("Checking data types after transformation...")
+sapply(New_sample, typeof)
+
+# Text processing for the 'Please explain why you would recommend it?' column
+print("Processing text...")
+processed <- textProcessor(New_sample$`Please explain why you would recommend it?`, metadata = New_sample,
+                           lowercase = TRUE, 
+                           removestopwords = TRUE, 
+                           removenumbers = TRUE, 
+                           removepunctuation = TRUE, 
+                           stem = TRUE, 
+                           wordLengths = c(3, Inf), 
+                           sparselevel = 1, 
+                           language = "en", 
+                           verbose = TRUE)
+
+# Prepare documents for topic modeling
+print("Preparing documents for topic modeling...")
+output <- prepDocuments(processed$documents, processed$vocab, processed$meta, lower.thresh = 1)  # Adjust lower threshold if needed
+
+docs <- output$documents
+vocab <- output$vocab
+meta <- output$meta
+
+# Reduce K based on the number of documents
+K <- min(5, length(docs))  # Set K to a maximum of 5 or the number of documents
+
+# First STM model with reduced topics
+set.seed(831)
+print("Fitting the first STM model with K topics...")
+system.time({
+  First_STM <- stm(docs, vocab, K = K,
+                   prevalence =~ factor(`Would you recommend any of the above listed apps to others?`),
+                   data = meta, 
+                   seed = 15, 
+                   max.em.its = 75)
+})
+
+# Plot the first topic model
+print("Plotting the first topic model...")
+plot(First_STM)
+Sys.sleep(10)  # 10-second delay
+
+# Second STM model with reduced topics
+set.seed(832)
+print("Fitting the second STM model with K topics...")
+system.time({
+  Second_STM <- stm(documents = output$documents, vocab = output$vocab,
+                    K = K, prevalence =~ factor(`Would you recommend any of the above listed apps to others?`),
+                    max.em.its = 75, data = meta,
+                    init.type = "Spectral", verbose = FALSE)
+})
+
+# Plot second topic model
+print("Plotting the second topic model...")
+plot(Second_STM)
+Sys.sleep(10)  # 10-second delay
+
+# Finding the optimal number of topics
+set.seed(833)
+print("Finding the optimal number of topics...")
+system.time({
+  findingk <- searchK(output$documents, output$vocab, K = 2:10,  # Reduced range
+                      prevalence =~ factor(`Would you recommend any of the above listed apps to others?`), data = meta, verbose = FALSE)
+})
+
+# Plot
+print("Plotting optimal number of topics...")
+plot(findingk)
+Sys.sleep(10)  # 10-second delay
+
+# Final topic model
+set.seed(836)
+print("Fitting the final STM model with K topics...")
+system.time({
+  Third_STM <- stm(documents = output$documents, vocab = output$vocab,
+                   K = K, prevalence =~ factor(`Would you recommend any of the above listed apps to others?`),
+                   max.em.its = 100, data = meta,
+                   init.type = "Spectral", verbose = FALSE)
+})
+
+# Plot final topic model
+print("Plotting the final topic model...")
+plot(Third_STM)
+Sys.sleep(10)  # 10-second delay
+
+# Additional analyses and visualizations
+print("Labeling topics...")
+labelTopics(Third_STM)
+
+print("Finding top comments for each topic...")
+findThoughts(Third_STM, texts = meta$`Please explain why you would recommend it?`, n = 2, topics = 1:K)
+
+print("Plotting topic correlations...")
+topic_correlation <- topicCorr(Third_STM)
+plot(topic_correlation)
+Sys.sleep(10)  # 10-second delay
+
+print("Plotting convergence...")
+plot(Third_STM$convergence$bound, type = "l",
+     ylab = "Approximate Objective", main = "Convergence")
+Sys.sleep(10)  # 10-second delay
+
+print("Creating word cloud for Topic 1...")
+cloud(Third_STM, topic = 1, scale = c(15, 1))
+Sys.sleep(10)  # 10-second delay
+
+print("Estimating effect of Outcome on topics...")
+predict_topics <- estimateEffect(formula = 1:K ~ `Would you recommend any of the above listed apps to others?`, 
+                                 stmobj = Third_STM, 
+                                 metadata = meta, 
+                                 uncertainty = "Global",
+                                 prior = 1e-5)
+
+print("Plotting the effect of Outcome on topics (point estimates)...")
+plot(predict_topics, 
+     covariate = "Would you recommend any of the above listed apps to others?", 
+     topics = 1:K, 
+     model = Third_STM, 
+     method = "pointestimate",  
+     main = "Effect of Outcome on Topics")
+Sys.sleep(10)  # 10-second delay
+
+print("Plotting topic proportions...")
+plot(Third_STM, type = "hist", topics = sample(1:K, size = 5))  # Adjust to sample topics
+Sys.sleep(10)  # 10-second delay
+plot(Third_STM, type = "hist")
+Sys.sleep(10)  # 10-second delay
+
+# Assessing model performance
+print("Assessing model performance...")
+if (requireNamespace("stm", quietly = TRUE)) {
+  if ("topicQuality" %in% ls("package:stm")) {
+    topic_quality_metrics <- topicQuality(model = Third_STM, documents = docs)
+    print("Topic quality metrics:")
+    print(topic_quality_metrics)
+  } else {
+    warning("topicQuality function not found. Consider using alternative assessment methods.")
+  }
+} else {
+  warning("stm package is not available. Please install it.")
+}

@@ -1,0 +1,227 @@
+# Load required libraries
+print("Loading libraries...")
+library(topicmodels)
+library(lda)
+library(slam)
+install.packages("stm")  # Ensure the stm package is installed
+library(stm)  # Ensure the stm package is loaded
+library(ggplot2)
+library(dplyr)
+library(tidytext)
+library(furrr)
+library(tm)
+library(tidyverse)
+library(wordcloud)
+library(Rtsne)
+library(rsvd)
+library(geometry)
+library(NLP)
+library(ldatuning)
+library(readxl)  # Load readxl for reading Excel files
+
+# Part-1 
+rm(list=ls())
+
+# Load the 'Ola.xlsx' dataset
+print("Loading dataset...")
+Ola_data <- read_excel("C:/Users/prabi/OneDrive/Desktop/scraped/Uber.xlsx",)
+
+# Check for NAs
+print("Checking for NAs...")
+na_counts <- sapply(Ola_data, function(x) sum(is.na(x)))
+print(na_counts)
+
+# Overview of the original dataset
+print("Overview of dataset...")
+str(Ola_data)
+
+# Sample 1000 rows for analysis and remove unnecessary columns
+set.seed(830)
+num_rows <- min(1000, nrow(Ola_data))
+print("Sampling data...")
+Ola_sample <- Ola_data[sample(nrow(Ola_data), num_rows), -c(1, 2, 3)] 
+
+# Format and transform columns
+print("Formatting and transforming columns...")
+Ola_sample$Outcome <- as.factor(Ola_sample$Outcome)
+Ola_sample$Comment <- as.character(Ola_sample$Comment)
+
+# Check data types after transformation
+print("Checking data types after transformation...")
+sapply(Ola_sample, typeof)
+
+# Check levels and distribution of the 'Outcome' variable
+print("Checking levels and distribution of Outcome...")
+print(levels(Ola_sample$Outcome))
+print(table(Ola_sample$Outcome))
+
+# Text processing
+print("Processing text...")
+processed <- textProcessor(Ola_sample$Comment, metadata = Ola_sample,
+                           lowercase = TRUE, 
+                           removestopwords = TRUE, 
+                           removenumbers = TRUE, 
+                           removepunctuation = TRUE, 
+                           stem = TRUE, 
+                           wordLengths = c(3, Inf), 
+                           sparselevel = 1, 
+                           language = "en", 
+                           verbose = TRUE)
+
+# Prepare documents for topic modeling, filtering terms that appear in more than 10 documents
+print("Preparing documents for topic modeling...")
+output <- prepDocuments(processed$documents, processed$vocab, processed$meta, lower.thresh = 10)
+
+docs <- output$documents
+vocab <- output$vocab
+meta <- output$meta
+
+# First STM model with 10 topics and prevalence based on Outcome (sentiment)
+set.seed(831)
+print("Fitting the first STM model with 10 topics...")
+system.time({
+  First_STM <- stm(docs, vocab, K = 10,
+                   prevalence =~ factor(Outcome),
+                   data = meta, 
+                   seed = 15, 
+                   max.em.its = 75)
+})
+
+# Plot the first topic model
+print("Plotting the first topic model...")
+plot(First_STM)
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Second STM model with 15 topics
+set.seed(832)
+print("Fitting the second STM model with 15 topics...")
+system.time({
+  Second_STM <- stm(documents = output$documents, vocab = output$vocab,
+                    K = 15, prevalence =~ factor(Outcome),
+                    max.em.its = 75, data = meta,
+                    init.type = "Spectral", verbose = FALSE)
+})
+
+# Plot second topic model
+print("Plotting the second topic model...")
+plot(Second_STM)
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Finding the optimal number of topics (K): Approach 1
+set.seed(833)
+print("Finding the optimal number of topics...")
+system.time({
+  findingk <- searchK(output$documents, output$vocab, K = 5:25,
+                      prevalence =~ factor(Outcome), data = meta, verbose = FALSE)
+})
+
+# Plot
+print("Plotting optimal number of topics...")
+plot(findingk)
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Finding optimal K: Approach 2
+set.seed(834)
+print("Finding optimal K using a different approach...")
+system.time({
+  findingk_ver2 <- searchK(documents = output$documents, 
+                           vocab = output$vocab,
+                           K = c(10,20,30,40,50,60,70),
+                           N = 500,
+                           proportion = 0.5,
+                           heldout.seed = 1234,
+                           M = 10,
+                           prevalence =~ factor(Outcome),
+                           max.em.its = 75,
+                           data = meta,
+                           init.type = "Spectral",
+                           verbose = TRUE)
+})
+
+# Plot
+print("Plotting second approach to find optimal K...")
+plot(findingk_ver2)
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Final topic model with 15 topics
+set.seed(836)
+print("Fitting the final STM model with 15 topics...")
+system.time({
+  Third_STM <- stm(documents = output$documents, vocab = output$vocab,
+                   K = 15, prevalence =~ factor(Outcome),
+                   max.em.its = 100, data = meta,
+                   init.type = "Spectral", verbose = FALSE)
+})
+
+# Plot final topic model
+print("Plotting the final topic model...")
+plot(Third_STM)
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Step 2: Additional analyses and visualizations
+
+# Top words in each topic
+print("Labeling topics...")
+labelTopics(Third_STM)
+
+# Find top 2 comments for Topic 1 to 10
+print("Finding top comments for each topic...")
+findThoughts(Third_STM, texts = meta$Comment, n = 2, topics = 1:10)
+
+# Graphical display of topic correlations
+print("Plotting topic correlations...")
+topic_correlation <- topicCorr(Third_STM)
+plot(topic_correlation)
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Convergence plot
+print("Plotting convergence...")
+plot(Third_STM$convergence$bound, type = "l",
+     ylab = "Approximate Objective", main = "Convergence")
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Word cloud for Topic 5
+set.seed(837)
+print("Creating word cloud for Topic 5...")
+cloud(Third_STM, topic = 5, scale = c(15, 1))
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Working with meta-data to estimate effect of Outcome on topics
+set.seed(838)
+print("Estimating effect of Outcome on topics...")
+predict_topics <- estimateEffect(formula = 1:10 ~ Outcome, 
+                                 stmobj = Third_STM, 
+                                 metadata = meta, 
+                                 uncertainty = "Global",
+                                 prior = 1e-5)
+
+# Simplified plot of the effect of Outcome on selected topics
+print("Plotting the effect of Outcome on topics (point estimates)...")
+plot(predict_topics, 
+     covariate = "Outcome", 
+     topics = 1:10,  # Plot all topics
+     model = Third_STM, 
+     method = "pointestimate",  # Simplified plot method
+     main = "Effect of Outcome on Topics")
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Topic proportions
+print("Plotting topic proportions...")
+plot(Third_STM, type = "hist", topics = sample(1:15, size = 9))
+Sys.sleep(10)  # Pause for 10 seconds
+plot(Third_STM, type = "hist")
+Sys.sleep(10)  # Pause for 10 seconds
+
+# Assessing model performance with topicQuality function
+print("Assessing model performance...")
+if (requireNamespace("stm", quietly = TRUE)) {
+  if ("topicQuality" %in% ls("package:stm")) {
+    topic_quality_metrics <- topicQuality(model = Third_STM, documents = docs)
+    print("Topic quality metrics:")
+    print(topic_quality_metrics)
+  } else {
+    warning("topicQuality function not found. Consider using alternative assessment methods.")
+  }
+} else {
+  warning("stm package is not available. Please install it.")
+}
