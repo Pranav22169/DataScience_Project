@@ -1,0 +1,78 @@
+import pandas as pd 
+import plotly.express as px 
+from sklearn.feature_extraction.text import CountVectorizer 
+
+# Load your dataset 
+file_path = r"C:\Users\prabi\OneDrive\Desktop\scraped\Rapido1.xlsx"  # Update this with your actual file path
+df = pd.read_excel(file_path) 
+
+# Basic EDA 
+print("Dataset Head:") 
+print(df.head()) 
+print("\nMissing Values:") 
+print(df.isnull().sum()) 
+
+# Replace NaN values with an empty string before applying the length function
+df['comment_length'] = df['Comment'].fillna('').apply(len)
+df['word_count'] = df['Comment'].fillna('').apply(lambda x: len(x.split())) 
+
+# Interactive scatter plot for comment length vs word count 
+fig = px.scatter(df, x='comment_length', y='word_count', 
+                 color='Outcome', 
+                 title='Comment Length vs Word Count', 
+                 labels={'comment_length': 'Comment Length', 
+                         'word_count': 'Word Count'}, 
+                 hover_data=['Comment'],
+                 color_discrete_sequence=['red', 'green', 'yellow'])  # Custom colors
+fig.show() 
+
+# Interactive histogram for comment lengths 
+fig_length = px.histogram(df, x='comment_length', nbins=30, 
+                          color='Outcome', 
+                          title='Distribution of Comment Lengths', 
+                          labels={'comment_length': 'Comment Length'},
+                          color_discrete_sequence=['red', 'green', 'yellow'])  # Custom colors
+fig_length.show() 
+
+# Interactive histogram for word counts 
+fig_word_count = px.histogram(df, x='word_count', nbins=30, 
+                              color='Outcome', 
+                              title='Distribution of Word Counts', 
+                              labels={'word_count': 'Word Count'},
+                              color_discrete_sequence=['red', 'green', 'yellow'])  # Custom colors
+fig_word_count.show() 
+
+# N-gram analysis function 
+def get_ngrams(comments, n=2, top_n=20):  
+    vectorizer = CountVectorizer(ngram_range=(n, n), stop_words='english') 
+    ngrams = vectorizer.fit_transform(comments) 
+    ngram_counts = ngrams.sum(axis=0) 
+    ngram_features = vectorizer.get_feature_names_out() 
+    # Create a DataFrame of n-grams and their counts 
+    ngram_df = pd.DataFrame(ngram_counts.A1, index=ngram_features, columns=['count']) 
+    return ngram_df.sort_values(by='count', ascending=False).head(top_n) 
+
+# Generate and display bigrams 
+comments = df['Comment'].dropna() 
+bigrams = get_ngrams(comments, n=2, top_n=20)  
+print("\nTop 20 Bigrams:") 
+print(bigrams) 
+
+# Bar plot for bigrams 
+fig_bigrams = px.bar(bigrams, x=bigrams.index, y='count', 
+                     title='Top 20 Bigrams', 
+                     labels={'x': 'Bigrams', 'count': 'Count'},
+                     color_discrete_sequence=['red', 'green', 'yellow'])  # Custom colors
+fig_bigrams.show() 
+
+# Generate and display trigrams 
+trigrams = get_ngrams(comments, n=3, top_n=20)  
+print("\nTop 20 Trigrams:") 
+print(trigrams) 
+
+# Bar plot for trigrams 
+fig_trigrams = px.bar(trigrams, x=trigrams.index, y='count', 
+                      title='Top 20 Trigrams', 
+                      labels={'x': 'Trigrams', 'count': 'Count'},
+                      color_discrete_sequence=['red', 'green', 'yellow'])  # Custom colors
+fig_trigrams.show()

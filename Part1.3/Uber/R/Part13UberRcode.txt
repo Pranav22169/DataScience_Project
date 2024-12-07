@@ -1,0 +1,43 @@
+# Install missing packages if not already installed
+install.packages(c("readxl", "syuzhet", "ggplot2", "dplyr", "writexl"))
+
+# Load necessary packages
+library(readxl)    # For reading .xlsx files
+library(syuzhet)   # For sentiment analysis
+library(ggplot2)   # For plotting
+library(dplyr)     # For data manipulation
+library(writexl)   # For writing .xlsx files
+
+# Step 1: Read the Excel file
+input_file <- "C:/Users/prabi/OneDrive/Desktop/scraped/Uber.xlsx"
+data <- read_excel(input_file)
+
+# Step 2: Perform sentiment analysis on the 'Comment' column
+sentiment_scores <- get_nrc_sentiment(data$Comment)
+
+# Step 3: Sum sentiment scores for each emotion
+emotion_totals <- colSums(sentiment_scores)
+
+# Convert to data frame for plotting
+emotion_df <- data.frame(emotion = names(emotion_totals), score = emotion_totals)
+
+# Step 4: Create a histogram using ggplot2
+ggplot(emotion_df, aes(x = reorder(emotion, -score), y = score)) + 
+  geom_bar(stat = "identity", fill = "red") +  # Change the fill color to red
+  coord_flip() + 
+  labs(title = "Histogram of Emotions", x = "Emotions", y = "Scores") + 
+  theme_minimal()
+
+# Optional Step: Export the sentiment scores to a new Excel file
+# Derive the directory from the input file path
+output_file <- gsub("Uber.xlsx", "Part13Uber_output.xlsx", input_file)
+
+# Combine original data with sentiment scores
+output_data <- bind_cols(data, sentiment_scores)
+
+# Write the combined data to the new Excel file
+write_xlsx(output_data, output_file)
+
+# Inform the user
+cat("Sentiment analysis results have been saved to:", output_file, "\n")
+
